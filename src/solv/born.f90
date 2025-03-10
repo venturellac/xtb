@@ -69,8 +69,20 @@ subroutine compute_bornr(nat, nnrad, nnlistr, ddpair, vdwr, rho, svdw, c1, &
    real(wp) :: br, dpsi, svdwi, vdwri, s1, v1, s2, arg, arg2
    real(wp) :: th, ch, alpi, beti, gami
 
+   integer :: start_count, end_count, count_rate
+   real(wp) :: elapsed_time
+
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
    call compute_psi(nat, nnrad, nnlistr, ddpair, vdwr, rho, brad, brdr)
 
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA compute_psi: ', elapsed_time, ' seconds'
+
+   !$OMP PARALLEL DO PRIVATE(iat, svdwi, vdwri, s1, v1, s2, br, arg2, arg, th, ch, dpsi) &
+   !$OMP SHARED(nat, brad, brdr, svdw, vdwr)
    do iat = 1, nat
 
       br = brad(iat)
@@ -102,11 +114,12 @@ subroutine compute_bornr(nat, nnrad, nnlistr, ddpair, vdwr, rho, svdw, c1, &
       call mctc_scal(brdr(:, :, iat), dpsi)
 
    end do
+   !$OMP END PARALLEL DO
 
 end subroutine compute_bornr
 
 
-pure subroutine compute_psi(nat, nnrad, nnlistr, ddpair, vdwr, rho, psi, dpsidr)
+ subroutine compute_psi(nat, nnrad, nnlistr, ddpair, vdwr, rho, psi, dpsidr)
 
    !> Number of atoms
    integer, intent(in) :: nat
@@ -142,11 +155,15 @@ pure subroutine compute_psi(nat, nnrad, nnlistr, ddpair, vdwr, rho, psi, dpsidr)
    real(wp) :: rvdwi, rvdwj
    integer  :: ovij, ovji, ov
 
+
    allocate(dpsitr(3, nat))
    psi(:) = 0.0_wp
    dpsidr(:, :, :) = 0.0_wp
    dpsitr(:, :) = 0.0_wp
-
+   
+   !$OMP PARALLEL do default(none) schedule(runtime) reduction(+:psi, dpsitr, dpsidr) &
+   !$OMP PRIVATE(kk, ii, jj, nn, r, dr, rhoi, rhoj, rvdwi, rvdwj, ovij, ovji, ov, r1, ap, am, ab, rhab, lnab, gi, dgi, gj, dgj, drjj, rh1, rhr1, aprh1, r12, r24) &
+   !$OMP SHARED(nat, nnlistr, ddpair, rho, vdwr, nnrad)
    do kk = 1, nnrad
 
       ii = nnlistr(1, kk)
@@ -369,11 +386,16 @@ pure subroutine compute_psi(nat, nnrad, nnlistr, ddpair, vdwr, rho, psi, dpsidr)
       end select
 
    enddo
+   !$OMP END PARALLEL DO
 
-   ! save one-center terms
+
+   !$OMP PARALLEL do schedule(runtime) &
+   !$OMP PRIVATE(i) &
+   !$OMP SHARED(dpsitr, dpsidr)
    do i = 1, nat
       dpsidr(:, i, i) = dpsitr(:, i)
    enddo
+   !$OMP END PARALLEL DO
 
 end subroutine compute_psi
 

@@ -215,7 +215,6 @@ module xtb_solv_gbsa
 
 contains
 
-
 !> Initialize data straucture
 subroutine initBorn(self, env, num, vdwRad, dielectricConst, freeEnergyShift, &
       & descreening, bornScale, bornOffset, surfaceTension, probeRad, rCutoff, &
@@ -407,40 +406,97 @@ subroutine update(self, env, num, xyz)
    real(wp), intent(in) :: xyz(:, :)
 
    ! initialize the neighbor list
+   integer :: start_count, end_count, count_rate
+   real(wp) :: elapsed_time
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
    call update_nnlist_gbsa(self%nat, self%ntpair, self%ppind, xyz, &
       & self%lrcut, self%srcut, self%nnsas, self%nnlists, self%nnrad, &
-      & self%nnlistr, self%ddpair, .false.)
+      & self%nnlistr, self%ddpair)
+
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA update_nnlist_gbsa: ', elapsed_time, ' seconds'
+
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
 
    call compute_bornr(self%nat, self%nnrad, self%nnlistr, self%ddpair, &
       & self%vdwr, self%rho, self%svdw, self%bornScale, self%brad, self%brdr)
+
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA born radii: ', elapsed_time, ' seconds'
+
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
 
    ! compute solvent accessible surface and its derivatives
    call compute_numsa(self%nat, self%nnsas, self%nnlists, xyz, self%vdwsa, &
       & self%wrp, self%trj2, self%angWeight, self%angGrid, &
       & self%sasa, self%dsdrt)
 
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA numsa: ', elapsed_time, ' seconds'
+
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
    ! contract surface gradient
    call mctc_gemv(self%dsdrt, self%gamsasa, self%dsdr)
    self%gsasa = mctc_dot(self%sasa, self%gamsasa)
 
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA mctc_gemv: ', elapsed_time, ' seconds'
+
    ! compute the Debye-Hueckel ion exclusion term
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
    if (self%lsalt) then
       call getDebyeHueckel(self%nat, self%dielectricConst, self%kappa, &
          & self%ionRad, self%brad, self%ionscr, self%discr)
    end if
 
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA getDebyeHueckel: ', elapsed_time, ' seconds'
+
    ! compute the HB term
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
    if (self%lhb) then
       call compute_fhb(self%nat, self%hbmag, self%vdwsa, self%sasa, &
          & self%hbw, self%dhbdw)
    end if
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA compute_fhb: ', elapsed_time, ' seconds'
 
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
    if (self%alpbet > 0.0_wp) then
       call getADet(self%nat, xyz, self%vdwr, self%aDet)
    end if
 
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA getADet: ', elapsed_time, ' seconds'
+   
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
    self%bornMat(:, :) = 0.0_wp
    call self%addBornMatrix(env, num, xyz, self%bornMat)
+
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA addBornMatrix: ', elapsed_time, ' seconds'
+
 
 end subroutine update
 
@@ -583,6 +639,11 @@ subroutine getEnergyParts(self, env, qat, qsh, gborn, ghb, gsasa, gshift)
 
    integer :: iat
 
+   integer :: start_count, end_count, count_rate
+   real(wp) :: elapsed_time
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
    ghb = 0.0_wp
    if (self%lhb) then
       do iat = 1, self%nat
@@ -595,6 +656,10 @@ subroutine getEnergyParts(self, env, qat, qsh, gborn, ghb, gsasa, gshift)
 
    gsasa = self%gsasa
    gshift = self%gshift
+
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA gsasa and gshift: ', elapsed_time, ' seconds'
 
 end subroutine getEnergyParts
 
@@ -628,6 +693,11 @@ subroutine addGradient(self, env, num, xyz, qat, qsh, gradient)
 
    real(wp) :: gborn, ghb
 
+
+   integer :: start_count, end_count, count_rate
+   real(wp) :: elapsed_time
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
    select case(self%kernel)
    case(gbKernel%still)
       if (self%lsalt) then
@@ -635,8 +705,10 @@ subroutine addGradient(self, env, num, xyz, qat, qsh, gradient)
             & qat, self%kappa, self%brad, self%brdr, self%ionscr, self%discr, &
             & gborn, gradient)
       else
+         
          call addGradientStill(self%nat, self%ntpair, self%ppind, self%ddpair, &
             & qat, self%keps, self%brad, self%brdr, gborn, gradient)
+         
       end if
    case(gbKernel%p16)
       call addGradientP16(self%nat, self%ntpair, self%ppind, self%ddpair, &
@@ -645,9 +717,23 @@ subroutine addGradient(self, env, num, xyz, qat, qsh, gradient)
 
    gradient = gradient + self%dsdr
 
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA addGradientStill: ', elapsed_time, ' seconds'
+
    if (self%lhb) then
+      
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
       call addGradientHBond(self%nat, self%at, qat, self%hbw, self%dhbdw, &
          & self%dsdrt, ghb, gradient)
+
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for GBSA Gradient HBond: ', elapsed_time, ' seconds'
+      
+
    else
       ghb = 0.0_wp
    endif
@@ -803,35 +889,8 @@ end subroutine getDebyeHueckel
 
 !> setup a pairlist and compute pair distances of all neighbors
 !  within thresholds lrcut and srcut.
-subroutine update_nnlist_gbsa(nat, ntpair, ppind, xyz, lrcut, srcut, &
-      & nnsas, nnlists, nnrad, nnlistr, ddpair, parallel)
-
-   integer, intent(in) :: nat
-   integer, intent(in) :: ntpair
-   integer, intent(in) :: ppind(:, :)
-   real(wp), intent(in) :: xyz(:, :)
-   real(wp), intent(in) :: lrcut
-   real(wp), intent(in) :: srcut
-   integer, intent(out) :: nnsas(:)
-   integer, intent(out) :: nnlists(:, :)
-   integer, intent(out) :: nnrad
-   integer, intent(out) :: nnlistr(:, :)
-   real(wp), intent(out) :: ddpair(:, :)
-   logical, intent(in) :: parallel
-
-   if (parallel) then
-      call update_nnlist_gbsa_parallel(nat, ntpair, ppind, xyz, &
-         & lrcut, srcut, nnsas, nnlists, nnrad, nnlistr, ddpair)
-   else
-      call update_nnlist_gbsa_sequential(nat, ntpair, ppind, xyz, &
-         & lrcut, srcut, nnsas, nnlists, nnrad, nnlistr, ddpair)
-   endif
-
-end subroutine update_nnlist_gbsa
-!> setup a pairlist and compute pair distances of all neighbors
-!  within thresholds lrcut and srcut.
 !  OMP parallel version.
-subroutine update_nnlist_gbsa_parallel(nat, ntpair, ppind, xyz, lrcut, &
+subroutine update_nnlist_gbsa(nat, ntpair, ppind, xyz, lrcut, &
       & srcut, nnsas, nnlists, nnrad, nnlistr, ddpair)
 !$ use omp_lib
 
@@ -925,66 +984,118 @@ subroutine update_nnlist_gbsa_parallel(nat, ntpair, ppind, xyz, lrcut, &
 
    deallocate(nntmp,nnls)
 
-end subroutine update_nnlist_gbsa_parallel
-!> setup a pairlist and compute pair distances of all neighbors
-!  within thresholds lrcut and srcut
-!  Sequential version.
-pure subroutine update_nnlist_gbsa_sequential(nat, ntpair, ppind, xyz, lrcut, &
+end subroutine update_nnlist_gbsa
+
+
+pure subroutine compute_distance_matrix(xyz, nat, ntpair, ppind, dr2, ddpair)
+    use, intrinsic :: iso_fortran_env, only : wp => real64 
+    implicit none
+
+
+    real(wp), dimension(:,:), intent(in) :: xyz(3, nat)       ! 3 x N matrix of xyz coordinates
+    integer, intent(in) :: nat ! natoms
+    integer, intent(in) :: ntpair       ! natom pairs
+    integer, dimension(:,:), intent(in) :: ppind       ! ij indices
+
+    
+    real(wp), dimension(:,:), intent(out) :: dr2(nat, nat) ! Output N x N distance matrix squared
+    real(wp), dimension(:,:), intent(out) :: ddpair
+    real(wp), dimension(:,:,:), allocatable :: diff
+    real(wp), dimension(:,:), allocatable :: test
+
+    integer :: ij
+
+    ! Compute coordinate differences using broadcasting-style array operations
+    diff = spread(xyz, 3, nat) - spread(xyz, 2, nat)  ! Equivalent to NumPy broadcasting
+
+    ! Compute squared distances and sum along the first axis (3D space)
+    
+    dr2 = sum(diff**2, dim=1)
+
+    do ij = 1, ntpair
+       ddpair(2:4,ij) = diff(:,ppind(1,ij), ppind(2,ij))
+       ddpair(1,:) = sqrt(dr2(ppind(1,ij), ppind(2,ij)))  ! Equivalent to np.sqrt(np.sum(diff**2, axis=0))
+    end do
+
+    ! Deallocate temporary array
+    deallocate(diff)
+end subroutine compute_distance_matrix
+
+pure subroutine update_nnlist_gbsa_vectorized(nat, ntpair, ppind, xyz, lrcut, &
       & srcut, nnsas, nnlists, nnrad, nnlistr, ddpair)
 
-   integer, intent(in) :: nat
-   integer, intent(in) :: ntpair
-   integer, intent(in) :: ppind(:, :)
-   real(wp), intent(in) :: xyz(:, :)
-   real(wp), intent(in) :: lrcut
-   real(wp), intent(in) :: srcut
-   integer, intent(out) :: nnsas(:)
-   integer, intent(out) :: nnlists(:, :)
-   integer, intent(out) :: nnrad
-   integer, intent(out) :: nnlistr(:, :)
-   real(wp), intent(out) :: ddpair(:, :)
+    use, intrinsic :: iso_fortran_env, only : wp => real64 
+    implicit none
 
-   integer kk, i1, i2
-   real(wp) rcutn2, lrcut2, srcut2
-   real(wp) x, y, z, dr2
-   integer ip, ip2
+    integer, intent(in) :: nat
+    integer, intent(in) :: ntpair
+    integer, intent(in) :: ppind(:, :)
+    real(wp), intent(in) :: xyz(:, :)
+    real(wp), intent(in) :: lrcut
+    real(wp), intent(in) :: srcut
+    integer, intent(out) :: nnsas(:)
+    integer, intent(out) :: nnlists(:, :)
+    integer, intent(out) :: nnrad
+    integer, intent(out) :: nnlistr(:, :)
+    real(wp), intent(out) :: ddpair(:, :)
 
-   lrcut2 = lrcut*lrcut
-   srcut2 = srcut*srcut
+    ! Declare necessary variables and arrays
+    integer :: i, ij, i1, i2
+    real(wp) :: lrcut2, srcut2
+    real(wp), dimension(:,:), allocatable :: dr2
+    integer, dimension(:), allocatable :: valid_indices, small_indices
+    integer, dimension(:), allocatable :: nt_range
+    integer :: num_valid, num_small
+    logical, allocatable :: mask_lrcut(:,:), mask_srcut(:,:)
 
-   nnsas=0
-   nnlists=0
-   ip=0
-   ip2=0
-   nnlistr=0
-   do kk=1,ntpair
-      i1=ppind(1,kk)
-      i2=ppind(2,kk)
-      x=xyz(1,i1)-xyz(1,i2)
-      y=xyz(2,i1)-xyz(2,i2)
-      z=xyz(3,i1)-xyz(3,i2)
-      dr2=x**2+y**2+z**2
-      ddpair(2,kk)=x
-      ddpair(3,kk)=y
-      ddpair(4,kk)=z
-      ddpair(1,kk)=sqrt(dr2)
-      if(dr2.lt.lrcut2) then
-         ip = ip + 1
-         nnlistr(1,ip)=i1
-         nnlistr(2,ip)=i2
-         nnlistr(3,ip)=kk
-         if(dr2.lt.srcut2) then
+    nt_range = (/ (i, i = 1, ntpair) /)
+
+    ! Initialize constants
+    lrcut2 = lrcut * lrcut
+    srcut2 = srcut * srcut
+
+    ! Allocate and reset outputs
+    nnsas = 0
+    nnlists = 0
+    nnlistr = 0
+    nnrad = 0
+    ddpair = 0
+
+    ! Calculate distances and pair info
+    call compute_distance_matrix(xyz, nat, ntpair, ppind, dr2, ddpair)
+
+    ! Logical masks
+    mask_lrcut = dr2 < lrcut2
+    mask_srcut = dr2 < srcut2 .and. dr2 > 0.0_wp  ! Include only pairs with non-zero distances
+
+    ! Filter indices that satisfy lrcut condition using PACK
+    num_valid = count(mask_lrcut)
+
+    ! Update nnlistr for valid pairs
+
+
+    ! Handle srcut condition without a loop
+
+    num_small = count(mask_srcut)
+    
+    if (num_small > 0) then
+        do i = 1, ntpair
+            i1 = ppind(1, i)
+            i2 = ppind(2, i)
+            if (mask_srcut(i1, i2)) then
             nnsas(i1) = nnsas(i1) + 1
             nnsas(i2) = nnsas(i2) + 1
-            nnlists(nnsas(i1),i1)=i2
-            nnlists(nnsas(i2),i2)=i1
-         endif
-      endif
-   enddo
-   nnrad = ip
+            nnlists(nnsas(i1), i1) = i2
+            nnlists(nnsas(i2), i2) = i1
+            endif
+        end do
+    end if
+    
+    !call SYSTEM_CLOCK(end_count)
+    !elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+    !print *, 'Elapsed wall time for GBSA nnlist mask: ', elapsed_time, ' seconds'
 
-end subroutine update_nnlist_gbsa_sequential
-
+end subroutine update_nnlist_gbsa_vectorized
 
 !> Compute contributions to potential for hydrogen bonding correction
 pure subroutine compute_fhb(nat, hbmag, vdwsa, sasa, hbw, dhbdw)
@@ -1078,7 +1189,7 @@ pure subroutine addGradientHBond(nat, at, q, hbw, dhbdw, dsdrt, ghb, gradient)
 end subroutine addGradientHBond
 
 
-pure subroutine addBornDeriv(self,q,gborn,ghb,dAmatdr,Afac)
+ subroutine addBornDeriv(self,q,gborn,ghb,dAmatdr,Afac)
    implicit none
    class(TBorn), intent(in) :: self
 

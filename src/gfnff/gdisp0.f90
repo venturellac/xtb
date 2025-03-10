@@ -121,6 +121,8 @@ subroutine weight_references_d4(dispm, nat, atoms, wf, cn, gwvec, gwdcn)
    gwvec = 0.0_wp
    gwdcn = 0.0_wp
 
+   !$OMP PARALLEL DO DEFAULT(NONE) PRIVATE(iat, ati, norm, dnorm, iref, gw, expw, expd, gwk, dgwk) &
+   !$OMP SHARED(nat, atoms, cn, dispm, wf, gwvec, gwdcn)
    do iat = 1, nat
       ati = atoms(iat)
       norm = 0.0_wp
@@ -154,9 +156,10 @@ subroutine weight_references_d4(dispm, nat, atoms, wf, cn, gwvec, gwdcn)
 
          dgwk = expd*norm-expw*dnorm*norm**2
          gwdcn(iref, iat) = dgwk
-
       end do
    end do
+   !$OMP END PARALLEL DO
+
 
 end subroutine weight_references_d4
 
@@ -231,6 +234,8 @@ subroutine get_atomic_c6_d4(dispm, nat, atoms, gwvec, gwdcn, c6, dc6dcn)
    c6 = 0.0_wp
    dc6dcn = 0.0_wp
 
+   !$OMP PARALLEL DO DEFAULT(NONE) PRIVATE(iat, jat, ati, atj, iref, jref, refc6, dc6, dc6dcni, dc6dcnj) &
+   !$OMP SHARED(nat, atoms, dispm, gwvec, gwdcn, c6, dc6dcn)
    do iat = 1, nat
       ati = atoms(iat)
       do jat = 1, iat
@@ -252,6 +257,8 @@ subroutine get_atomic_c6_d4(dispm, nat, atoms, gwvec, gwdcn, c6, dc6dcn)
          dc6dcn(jat, iat) = dc6dcnj
       end do
    end do
+   !$OMP END PARALLEL DO
+
 end subroutine get_atomic_c6_d4
 
 subroutine d3_gradient(dispm, nat, at, xyz, npair, pairlist, zeta_scale, radii, &

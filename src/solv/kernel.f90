@@ -221,6 +221,9 @@ subroutine addGradientStill(nat, ntpair, ppind, ddpair, qat, keps, &
    ! GB energy and gradient
 
    ! compute energy and fgb direct and radii derivatives
+   !$OMP PARALLEL DO default(none) schedule(runtime) REDUCTION(+:egb, grddb, gradient) &
+   !$OMP PRIVATE(kk, r, r2, i, j, qq, aa, dd, expd, fgb2, dfgb2, dfgb, dfgb3, ap, dr, bp, grddbi, grddbj) &
+   !$OMP SHARED(keps, ntpair, ppind, ddpair, qat, brad)
    do kk = 1, ntpair
       r = ddpair(1, kk)
       r2 = r*r
@@ -254,6 +257,7 @@ subroutine addGradientStill(nat, ntpair, ppind, ddpair, qat, keps, &
       !gradient = gradient + brdr(:, :, j) * grddbj*qq
 
    enddo
+   !$OMP END PARALLEL DO
 
    ! self-energy part
    do i = 1, nat
@@ -486,7 +490,7 @@ pure subroutine addBornDerivSaltStill(nat, ntpair, ppind, ddpair, qat, kappa, &
 end subroutine addBornDerivSaltStill
 
 
-pure subroutine addBornDerivStill(nat, ntpair, ppind, ddpair, qat, keps, &
+ subroutine addBornDerivStill(nat, ntpair, ppind, ddpair, qat, keps, &
       & brad, brdr, gborn, dAmatdr, Afac)
 
    !> Number of atoms
@@ -534,6 +538,9 @@ pure subroutine addBornDerivStill(nat, ntpair, ppind, ddpair, qat, keps, &
    ! GB energy and gradient
 
    ! compute energy and fgb direct and radii derivatives
+   !$OMP PARALLEL do default(none) schedule(runtime) REDUCTION(+:dAmatdr, Afac, egb)&
+   !$OMP PRIVATE(kk, i, j, qq, r, r2, aa, dd, expd, fgb2, dfgb, dfgb2, dfgb3, ap, dr, bp, grddbi, grddbj)&
+   !$OMP SHARED(nat, ntpair, ppind, ddpair, qat, keps, brad, brdr, gborn)
    do kk = 1, ntpair
       r = ddpair(1,kk)
       r2 = r*r
@@ -569,7 +576,43 @@ pure subroutine addBornDerivStill(nat, ntpair, ppind, ddpair, qat, keps, &
 
    enddo
 
+   call addBornDerivStill_selfenergy(nat, qat, keps, &
+      & brad, brdr, dAmatdr, egb)
+
+
+   gborn = egb
+
+end subroutine addBornDerivStill
+
+ subroutine addBornDerivStill_selfenergy(nat, qat, keps, &
+      & brad, brdr, dAmatdr, egb)
+
+   !> Number of atoms
+   integer, intent(in) :: nat
+
+   !> Atomic partial charges
+   real(wp), intent(in) :: qat(:)
+
+   !> Dielectric screening
+   real(wp), intent(in) :: keps
+
+   !> Born radii
+   real(wp), intent(in) :: brad(:)
+
+   !> Derivative of Born radii w.r.t. cartesian coordinates
+   real(wp), intent(in) :: brdr(:, :, :)
+
+   real(wp), intent(inout) :: dAmatdr(:, :, :)
+
+   real(wp), intent(inout) :: egb
+
+   integer :: i
+   real(wp) :: qq,bp, grddbi
+
    ! self-energy part
+   !$OMP PARALLEL do default(none) schedule(runtime) REDUCTION(+:dAmatdr, egb)&
+   !$OMP PRIVATE(i, qq, bp, grddbi) &
+   !$OMP SHARED(nat, keps, brad, qat, brdr)
    do i = 1, nat
       bp = 1._wp/brad(i)
       qq = qat(i)*bp
@@ -577,10 +620,9 @@ pure subroutine addBornDerivStill(nat, ntpair, ppind, ddpair, qat, keps, &
       grddbi = -keps*bp*bp*0.5_wp
       dAmatdr(:,:,i) = dAmatdr(:,:,i) + brdr(:,:,i)*grddbi*qat(i)
    enddo
+   !$OMP END PARALLEL DO
 
-   gborn = egb
-
-end subroutine addBornDerivStill
+end subroutine addBornDerivStill_selfenergy
 
 
 pure subroutine addBornMatSaltStill(nat, ntpair, ppind, ddpair, kappa, brad, ionscr, &
@@ -646,7 +688,7 @@ pure subroutine addBornMatSaltStill(nat, ntpair, ppind, ddpair, kappa, brad, ion
 end subroutine addBornMatSaltStill
 
 
-pure subroutine addBornMatStill(nat, ntpair, ppind, ddpair, keps, brad, Amat)
+ subroutine addBornMatStill(nat, ntpair, ppind, ddpair, keps, brad, Amat)
 
    !> Number of atoms
    integer, intent(in) :: nat
@@ -669,15 +711,18 @@ pure subroutine addBornMatStill(nat, ntpair, ppind, ddpair, keps, brad, Amat)
    !> Interaction matrix
    real(wp), intent(inout) :: Amat(:, :)
 
-   integer  :: i, j, nnj
+   integer  :: i, j
    integer  :: kk
    real(wp), parameter :: a13=1.0_wp/3.0_wp
    real(wp), parameter :: a4=0.25_wp
    real(wp), parameter :: sqrt2pi = sqrt(2.0_wp/pi)
-   real(wp) :: aa, r2, gg, arg, bp
-   real(wp) :: dd, expd, fgb, fgb2, dfgb
+   real(wp) :: aa, r2, bp
+   real(wp) :: dd, expd, fgb, fgb2, dfgb, dfg
 
    ! compute energy and Amat direct and radii derivatives
+   !$OMP PARALLEL DO default(none) schedule(runtime) REDUCTION(+:Amat) &
+   !$OMP PRIVATE(i, j, kk, aa, r2, dd, expd, fgb, fgb2, dfgb, bp) &
+   !$OMP SHARED(brad, nat, keps, ppind, ddpair, ntpair)
    do kk = 1, ntpair
       r2 = ddpair(1, kk)
       r2 = r2*r2
@@ -693,6 +738,7 @@ pure subroutine addBornMatStill(nat, ntpair, ppind, ddpair, keps, brad, Amat)
       Amat(i, j) = keps*dfgb + Amat(i, j)
       Amat(j, i) = keps*dfgb + Amat(j, i)
    enddo
+   !$OMP END PARALLEL DO
 
    ! self-energy part
    do i = 1, nat

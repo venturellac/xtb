@@ -1787,6 +1787,9 @@ subroutine goed_gfnff(env,single,n,at,sqrab,r,chrg,eeqtmp,cn,q,es,gbsa,param,top
    !> Solvation
    type(TBorn), allocatable, intent(in) :: gbsa
 
+   integer :: start_count, end_count, count_rate
+   real(wp) :: elapsed_time
+
    integer  :: m,i,j,k,ii,ij
    integer,allocatable :: ipiv(:)
    real(wp) :: gammij,tsqrt2pi,r2,tmp
@@ -1799,14 +1802,29 @@ subroutine goed_gfnff(env,single,n,at,sqrab,r,chrg,eeqtmp,cn,q,es,gbsa,param,top
    m=n+topo%nfrag 
    allocate(A(m,m),x(m))
 
-   !  setup RHS !
 
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
+   !  setup RHS !
+   !$omp parallel default(none) &
+   !$omp shared(n, x, topo, param, at, cn) &
+   !$omp private(i)
+   !$omp do schedule(dynamic)
    do i=1,n
       x(i) = topo%chieeq(i) + param%cnf(at(i))*sqrt(cn(i))
    enddo
+   !$omp enddo
+   !$omp end parallel
+
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for goed x: ', elapsed_time, ' seconds'
 
    A = 0
-   
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
    !  setup A matrix !
 
    !$omp parallel default(none) &
@@ -1833,8 +1851,17 @@ subroutine goed_gfnff(env,single,n,at,sqrab,r,chrg,eeqtmp,cn,q,es,gbsa,param,top
    !$omp enddo
    !$omp end parallel
 
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for goed A1: ', elapsed_time, ' seconds'
+
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
    !  fragment charge constrain !
-   
+   !$omp parallel default(none) &
+   !$omp shared(topo,n,A,x) &
+   !$omp private(i,j)
+   !$omp do schedule(dynamic)
    do i=1,topo%nfrag
       x(n+i)=topo%qfrag(i)
       do j=1,n
@@ -1844,13 +1871,29 @@ subroutine goed_gfnff(env,single,n,at,sqrab,r,chrg,eeqtmp,cn,q,es,gbsa,param,top
          endif
       enddo
    enddo
+   !$omp enddo
+   !$omp end parallel
+
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for goed A2: ', elapsed_time, ' seconds'
+
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
 
    if (allocated(gbsa)) then
       A(:n, :n) = A(:n, :n) + gbsa%bornMat(:, :)
    end if
 
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for goed A+gbsa: ', elapsed_time, ' seconds'
+
 !     call prmat(6,A,m,m,'A eg')
    allocate(ipiv(m))
+
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
 
    if(single) then
       
@@ -1866,11 +1909,21 @@ subroutine goed_gfnff(env,single,n,at,sqrab,r,chrg,eeqtmp,cn,q,es,gbsa,param,top
    else
       
       call mctc_sytrf(env, a, ipiv)
+      call SYSTEM_CLOCK(count_rate=count_rate)
+      call SYSTEM_CLOCK(start_count)
+
       call mctc_sytrs(env, a, x, ipiv)
+      call SYSTEM_CLOCK(end_count)
+      elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+      print *, 'Elapsed wall time for goed mctc_sytrs: ', elapsed_time, ' seconds'
       q(1:n)=x(1:n)
       deallocate(A,x)
    
    endif
+
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for goed q: ', elapsed_time, ' seconds'
 
    call env%check(exitRun)
    
@@ -1883,7 +1936,14 @@ subroutine goed_gfnff(env,single,n,at,sqrab,r,chrg,eeqtmp,cn,q,es,gbsa,param,top
 
    !  energy !
 
+   call SYSTEM_CLOCK(count_rate=count_rate)
+   call SYSTEM_CLOCK(start_count)
+
    es = 0.0_wp
+   !$omp parallel default(none) reduction(+:es) &
+   !$omp shared(cn, at, topo, q, r, param, eeqtmp, n) &
+   !$omp private(i,j,k,ij,ii,tmp)
+   !$omp do schedule(dynamic)
    do i=1,n
       
       ii = i*(i-1)/2
@@ -1898,6 +1958,12 @@ subroutine goed_gfnff(env,single,n,at,sqrab,r,chrg,eeqtmp,cn,q,es,gbsa,param,top
       &        + q(i)*q(i)*0.5d0*(topo%gameeq(i)+tsqrt2pi/sqrt(topo%alpeeq(i)))
    
    enddo
+   !$omp enddo
+   !$omp end parallel
+
+   call SYSTEM_CLOCK(end_count)
+   elapsed_time = real(end_count - start_count, wp) / real(count_rate, wp)
+   print *, 'Elapsed wall time for goed es: ', elapsed_time, ' seconds'
 
 end subroutine goed_gfnff
 
@@ -3464,7 +3530,7 @@ subroutine gfnff_dlogcoord(n,at,xyz,rab,logCN,dlogCN,thr2,param)
          cn(j) = cn(j) + erfCN
       enddo
    enddo
-   
+  
    ! create cutted logarithm CN + derivatives !
    do i = 1, n
       ii=i*(i-1)/2

@@ -784,6 +784,9 @@ subroutine gfnff_hbset(n,at,xyz,topo,neigh,nlist,hbthr1,hbthr2)
       nlist%nhb1=0
       nlist%nhb2=0
       ! loop over hb-relevant AB atoms
+      !$OMP PARALLEL do default(none) schedule(runtime) &
+      !$OMP PRIVATE(i,j,k,nh,ia,ix,lin,ij,inh,jnh, iTri,iTrj,iTrDum, free, ijnonbond, rab, rih,rjh)&
+      !$OMP SHARED(rmsd, topo, neigh, nlist, at, n, xyz, hbthr1, hbthr2)
       do ix=1,topo%nathbAB  
         i=topo%hbatABl(1,ix) 
         j=topo%hbatABl(2,ix)
@@ -811,6 +814,7 @@ subroutine gfnff_hbset(n,at,xyz,topo,neigh,nlist,hbthr1,hbthr2)
               ! check if i is the bonded A    
               if(iTri.le.neigh%numctr) then ! nh is not shifted so bpair works without adjustment 
                 if(neigh%bpair(i,nh,iTri).eq.1.and.ijnonbond) then
+                  !$OMP CRITICAL
                   nlist%nhb2=nlist%nhb2+1
                   nlist%hblist2(1,nlist%nhb2)=i
                   nlist%hblist2(2,nlist%nhb2)=j
@@ -818,11 +822,13 @@ subroutine gfnff_hbset(n,at,xyz,topo,neigh,nlist,hbthr1,hbthr2)
                   nlist%hblist2(4,nlist%nhb2)=iTri
                   nlist%hblist2(5,nlist%nhb2)=iTrj
                   free=.false. ! not available for nhb1 !!!
+                  !$OMP END CRITICAL
                 endif 
               endif  
               ! check if j is the bonded A
               if(iTrj.le.neigh%numctr.and.free) then
                 if(neigh%bpair(j,nh,iTrj).eq.1.and.ijnonbond) then
+                  !$OMP CRITICAL
                   nlist%nhb2=nlist%nhb2+1
                   nlist%hblist2(1,nlist%nhb2)=j
                   nlist%hblist2(2,nlist%nhb2)=i
@@ -830,21 +836,27 @@ subroutine gfnff_hbset(n,at,xyz,topo,neigh,nlist,hbthr1,hbthr2)
                   nlist%hblist2(4,nlist%nhb2)=iTrj
                   nlist%hblist2(5,nlist%nhb2)=iTri
                   free=.false. ! not available for nhb1 !!!
+                  !$OMP END CRITICAL
+
                 endif
               endif  
               ! check for non-cov bonded A  
               if(rab+rih+rjh.lt.hbthr2.and.free) then ! sum of rAB,rAH,rBH is below threshold
+               !$OMP CRITICAL
                 nlist%nhb1=nlist%nhb1+1
                 nlist%hblist1(1,nlist%nhb1)=i 
                 nlist%hblist1(2,nlist%nhb1)=j 
                 nlist%hblist1(3,nlist%nhb1)=nh
                 nlist%hblist1(4,nlist%nhb1)=iTri
                 nlist%hblist1(5,nlist%nhb1)=iTrj
+               !$OMP END CRITICAL
+
               endif
             enddo ! k: relevant H atoms
           enddo ! iTrj
         enddo ! iTri
       enddo ! ix: relevant AB atoms 
+      !$OMP END PARALLEL DO
 
       ! for nxb list only i is not shifted
       nlist%nxb =0
@@ -1279,6 +1291,9 @@ use xtb_mctc_accuracy, only : wp
       nhb1=0
       nhb2=0
       ! loop over hb-relevant AB atoms
+      !$OMP PARALLEL do default(none) schedule(runtime) REDUCTION(+:nhb1, nhb2, nxb) &
+      !$OMP PRIVATE(i,j,k,nh,ia,ix,lin,ij,inh,jnh,iTri,iTrj,iTrDum,ijnonbond,free,rab,rih,rjh)&
+      !$OMP SHARED(topo, neigh, nlist, at, n, xyz, hbthr1, hbthr2)
       do ix=1,topo%nathbAB  
         i=topo%hbatABl(1,ix) 
         j=topo%hbatABl(2,ix)
@@ -1332,6 +1347,8 @@ use xtb_mctc_accuracy, only : wp
           enddo ! iTrj
         enddo ! iTri
       enddo ! ix: relevant AB atoms 
+      !$OMP END PARALLEL DO
+      
       nxb =0
       do ix=1,topo%natxbAB
         !do iTrj=1, neigh%numctr
@@ -1343,6 +1360,8 @@ use xtb_mctc_accuracy, only : wp
           nxb=nxb+1
         !enddo
       enddo
+      
+      
 
 ! the actual size can be larger, so make it save
       if(neigh%numctr.gt.1)then
